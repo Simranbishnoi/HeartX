@@ -62,6 +62,6 @@ class ClinicalFeatureEngineer(BaseEstimator, TransformerMixin):
             ]
             choices = ['Normal', 'Elevated', 'High']
             # We use np.select to assign categories, default is missing
-            X_out['bp_category'] = np.select(conditions, choices, default=np.nan)
+            X_out['bp_category'] = np.select(conditions, choices, default='Missing')
             
         return X_out
