@@ -79,8 +79,7 @@ def create_audit_log(db: Session, action: str, table_name: str, record_id: int):
 
 @app.post("/patients", response_model=api.PatientResponse)
 def create_patient(patient_data: api.PatientCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    # Phase 36: Transactions
-    # The SQLAlchemy session handles the transaction
+
     
     # 1. Create Patient
     db_patient = domain.Patient(age=patient_data.age, sex=patient_data.sex)
@@ -182,6 +181,82 @@ def predict_heart_disease(patient_id: int, background_tasks: BackgroundTasks, db
     # Generate probability
     try:
         probability = float(final_pipeline.predict_proba(input_data)[0, 1])
+        
+        # --- Explainable AI (SHAP) for High Risk ---
+        top_risk_factors = []
+        if probability >= 0.50:
+            try:
+                import shap
+                import numpy as np
+                
+                # 1. Transform data through the pipeline up to the model
+                X_transformed = final_pipeline[:-1].transform(input_data)
+                
+                # 2. Get the XGBoost model
+                xgb_model = final_pipeline.named_steps['model']
+                
+                # 3. Calculate SHAP values
+                explainer = shap.TreeExplainer(xgb_model)
+                shap_values = explainer.shap_values(X_transformed)
+                
+                # Extract actual feature names from the pipeline
+                try:
+                    preprocessor = final_pipeline.named_steps['preprocessing']
+                    selector = final_pipeline.named_steps['feature_selection']
+                    
+                    # Get names after OneHotEncoding & Scaling
+                    if hasattr(preprocessor, 'get_feature_names_out'):
+                        prep_names = preprocessor.get_feature_names_out()
+                    else:
+                        prep_names = [f"Feature_{i}" for i in range(selector.selector.n_features_in_)]
+                    
+                    # Filter names through the mutual info selector mask
+                    if hasattr(selector, 'selector') and hasattr(selector.selector, 'get_support'):
+                        mask = selector.selector.get_support()
+                        feature_names = np.array(prep_names)[mask].tolist()
+                    else:
+                        feature_names = prep_names
+                        
+                    # Clean up prefix like 'num__' or 'cat__' from ColumnTransformer
+                    feature_names = [name.split('__')[-1] for name in feature_names]
+                    
+                except Exception as e:
+                    print(f"Could not extract feature names: {e}")
+                    if hasattr(X_transformed, 'columns'):
+                        feature_names = X_transformed.columns.tolist()
+                    else:
+                        feature_names = [f"Feature_{i}" for i in range(X_transformed.shape[1])]
+                
+                # SHAP values for the single patient
+                patient_shap_values = shap_values[0] if len(np.array(shap_values).shape) > 1 else shap_values
+                
+                # Mapping user-friendly names for better display
+                friendly_names = {
+                    "chol_age_interaction": "Cholesterol-Age Interaction",
+                    "heart_rate_ratio": "Heart Rate Stress Ratio",
+                    "exercise_stress": "Exercise Angina Stress",
+                    "age": "Patient Age",
+                    "trestbps": "Resting Blood Pressure",
+                    "chol": "Cholesterol Level",
+                    "thalch": "Max Heart Rate",
+                    "oldpeak": "ST Depression (Oldpeak)",
+                    "ca": "Number of Major Vessels",
+                }
+                
+                # Zip and sort by highest positive contribution
+                contributions = list(zip(feature_names, patient_shap_values))
+                contributions.sort(key=lambda x: x[1], reverse=True)
+                
+                # Get Top 3 contributing factors with friendly names
+                top_risk_factors = []
+                for feat, val in contributions:
+                    if val > 0 and len(top_risk_factors) < 3:
+                        display_name = friendly_names.get(feat, feat.replace('_', ' ').title())
+                        top_risk_factors.append(f"{display_name}: +{val:.2f} risk score")
+                        
+            except Exception as e:
+                print(f"SHAP explanation failed: {e}")
+                
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
         
@@ -190,7 +265,7 @@ def predict_heart_disease(patient_id: int, background_tasks: BackgroundTasks, db
     risk_level = determine_risk_level(probability)
     
     # Store Prediction
-    # We use model_id 1 assuming it's the one we seeded
+
     model = db.query(domain.MLModel).filter(domain.MLModel.model_name == 'Proposed Novelty XGBoost').first()
     model_id = model.model_id if model else 1
     
@@ -206,7 +281,17 @@ def predict_heart_disease(patient_id: int, background_tasks: BackgroundTasks, db
     db.refresh(db_prediction)
     
     background_tasks.add_task(create_audit_log, db, "PREDICTION_CREATED", "predictions", db_prediction.prediction_id)
-    return db_prediction
+    
+    # Return response matching schema with top_risk_factors
+    return api.PredictionResponse(
+        prediction_id=db_prediction.prediction_id,
+        patient_id=db_prediction.patient_id,
+        probability=db_prediction.probability,
+        prediction=db_prediction.prediction,
+        risk_level=db_prediction.risk_level,
+        prediction_time=db_prediction.prediction_time,
+        top_risk_factors=top_risk_factors if top_risk_factors else None
+    )
 
 @app.get("/predictions")
 def get_prediction_history(db: Session = Depends(get_db)):

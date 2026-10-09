@@ -37,6 +37,7 @@ class PredictionResponse(BaseModel):
     prediction: int
     risk_level: str
     prediction_time: datetime
+    top_risk_factors: Optional[list[str]] = None
     
     class Config:
         from_attributes = True

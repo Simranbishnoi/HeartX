@@ -1,6 +1,3 @@
--- Phase 31: Normalized Database Schema
--- Run this script in PostgreSQL to initialize the database schema
-
 -- 1. Patients Table
 CREATE TABLE IF NOT EXISTS patient (
     patient_id SERIAL PRIMARY KEY,

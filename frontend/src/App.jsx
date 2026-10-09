@@ -1,14 +1,14 @@
-import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import { Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom'
 import { Activity, LayoutDashboard, UserPlus, History, ShieldAlert } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import PatientForm from './pages/PatientForm'
 import PredictionHistory from './pages/PredictionHistory'
 import HighRiskCases from './pages/HighRiskCases'
 import Login from './pages/Login'
-import { Navigate } from 'react-router-dom'
 
 function App() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   return (
     <>
@@ -39,6 +39,18 @@ function App() {
               <ShieldAlert size={18} /> High Risk
             </span>
           </Link>
+          <button 
+            onClick={() => {
+              localStorage.removeItem('doctor_id');
+              navigate('/login');
+            }} 
+            className="nav-link" 
+            style={{background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger-color)', marginLeft: 'auto'}}
+          >
+             <span style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
+               Logout
+            </span>
+          </button>
         </div>
       </nav>
       )}

@@ -58,7 +58,8 @@ export default function PatientForm() {
       const predictData = await predictResponse.json();
       setResult({
         probability: predictData.probability,
-        level: predictData.risk_level
+        level: predictData.risk_level,
+        topFactors: predictData.top_risk_factors
       });
     } catch (err) {
       console.error(err);
@@ -151,6 +152,20 @@ export default function PatientForm() {
               {result.level} Risk
             </h2>
             <p style={{marginTop: '1rem'}}>Model used: <strong>Optimized XGBoost v1.0</strong></p>
+            
+            {result.topFactors && result.topFactors.length > 0 && (
+              <div style={{marginTop: '2rem', textAlign: 'left', background: 'var(--bg-secondary)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)'}}>
+                <h4 style={{marginBottom: '0.75rem', color: 'var(--danger-color)'}}>
+                   🧠 Explainable AI Insights
+                </h4>
+                <p style={{fontSize: '0.85rem', marginBottom: '0.75rem', opacity: 0.8}}>Primary factors driving this high risk prediction:</p>
+                <ul style={{fontSize: '0.9rem', paddingLeft: '1.2rem'}}>
+                  {result.topFactors.map((factor, idx) => (
+                    <li key={idx} style={{marginBottom: '0.4rem', fontWeight: '500'}}>{factor}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         ) : (
           <div className="glass-panel" style={{height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.5}}>
