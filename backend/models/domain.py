@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
-from .database import Base
+from database import Base
 
 class Patient(Base):
     __tablename__ = "patient"
@@ -31,6 +31,7 @@ class ClinicalTests(Base):
     __tablename__ = "clinical_tests"
     test_id = Column(Integer, primary_key=True, index=True)
     patient_id = Column(Integer, ForeignKey("patient.patient_id", ondelete="CASCADE"))
+    cp = Column(String(50))
     fbs = Column(Boolean)
     restecg = Column(String(50))
     exang = Column(Boolean)
@@ -75,3 +76,9 @@ class AuditLog(Base):
     table_name = Column(String(100), nullable=False)
     record_id = Column(Integer)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+class Doctor(Base):
+    __tablename__ = "doctor"
+    doctor_id = Column(Integer, primary_key=True, index=True)
+    gmail = Column(String(100), unique=True, nullable=False)
+    password = Column(String(100), nullable=False)

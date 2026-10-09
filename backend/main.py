@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 import joblib
 import pandas as pd
@@ -8,14 +9,45 @@ import sys
 # Ensure src can be imported for unpickling the model
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from .database import engine, Base, get_db
-from .models import domain
-from .schemas import api
+from database import engine, Base, get_db, SessionLocal
+from models import domain
+from schemas import api
 
 # Create tables
 Base.metadata.create_all(bind=engine)
 
+# Seed Doctors
+db_session = SessionLocal()
+try:
+    if db_session.query(domain.Doctor).count() == 0:
+        print("Seeding 15 doctors...")
+        import random
+        for i in range(1, 16):
+            if i == 1:
+                gmail = "simran21@gmail.com"
+            else:
+                domains = ["gmail.com"]
+                gmail = f"doctor{i}_{random.randint(10,99)}@gmail.com"
+            
+            prefix = gmail.split("@")[0]
+            password = prefix[::-1] # Reverse of email prefix
+            doc = domain.Doctor(doctor_id=i, gmail=gmail, password=password)
+            db_session.add(doc)
+        db_session.commit()
+except Exception as e:
+    print(f"Failed to seed doctors: {e}")
+finally:
+    db_session.close()
+
 app = FastAPI(title="HeartX Prediction API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Phase 41: Load the Model
 # We load the entire pipeline once at startup. We DO NOT fit during prediction (Phase 40).
@@ -34,7 +66,7 @@ def determine_risk_level(probability: float) -> str:
     # Phase 43: Risk Classification (Project-defined bands)
     if probability < 0.30:
         return "Low"
-    elif probability < 0.70:
+    elif probability < 0.50:
         return "Moderate"
     else:
         return "High"
@@ -69,6 +101,7 @@ def create_patient(patient_data: api.PatientCreate, background_tasks: Background
     # 3. Add Tests
     db_tests = domain.ClinicalTests(
         patient_id=db_patient.patient_id,
+        cp=patient_data.cp,
         fbs=patient_data.fbs,
         restecg=patient_data.restecg,
         exang=patient_data.exang,
@@ -84,6 +117,38 @@ def create_patient(patient_data: api.PatientCreate, background_tasks: Background
     background_tasks.add_task(create_audit_log, db, "PATIENT_CREATED", "patient", db_patient.patient_id)
     return db_patient
 
+@app.put("/patients/{patient_id}", response_model=api.PatientResponse)
+def update_patient(patient_id: int, patient_data: api.PatientCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    db_patient = db.query(domain.Patient).filter(domain.Patient.patient_id == patient_id).first()
+    if not db_patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+        
+    db_patient.age = patient_data.age
+    db_patient.sex = patient_data.sex
+    
+    measurements = db.query(domain.ClinicalMeasurements).filter(domain.ClinicalMeasurements.patient_id == patient_id).first()
+    if measurements:
+        measurements.trestbps = patient_data.trestbps
+        measurements.chol = patient_data.chol
+        measurements.thalch = patient_data.thalch
+        measurements.oldpeak = patient_data.oldpeak
+        measurements.ca = patient_data.ca
+        
+    tests = db.query(domain.ClinicalTests).filter(domain.ClinicalTests.patient_id == patient_id).first()
+    if tests:
+        tests.cp = patient_data.cp
+        tests.fbs = patient_data.fbs
+        tests.restecg = patient_data.restecg
+        tests.exang = patient_data.exang
+        tests.slope = patient_data.slope
+        tests.thal = patient_data.thal
+        
+    db.commit()
+    db.refresh(db_patient)
+    
+    background_tasks.add_task(create_audit_log, db, "PATIENT_UPDATED", "patient", db_patient.patient_id)
+    return db_patient
+
 @app.post("/predict/{patient_id}", response_model=api.PredictionResponse)
 def predict_heart_disease(patient_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     if final_pipeline is None:
@@ -97,22 +162,21 @@ def predict_heart_disease(patient_id: int, background_tasks: BackgroundTasks, db
     tests = db.query(domain.ClinicalTests).filter(domain.ClinicalTests.patient_id == patient_id).first()
     
     # Phase 39: Construct ML input
-    # Needs to match the DataFrame format expected by the pipeline
     input_data = pd.DataFrame([{
         "age": patient.age,
         "sex": patient.sex,
-        "dataset": "API", # Default or handle missing
-        "cp": "API_default", # Need real data for these in a full app
-        "trestbps": measurements.trestbps if measurements else None,
-        "chol": measurements.chol if measurements else None,
-        "fbs": tests.fbs if tests else None,
-        "restecg": tests.restecg if tests else None,
-        "thalch": measurements.thalch if measurements else None,
-        "exang": tests.exang if tests else None,
-        "oldpeak": measurements.oldpeak if measurements else None,
-        "slope": tests.slope if tests else None,
-        "ca": measurements.ca if measurements else None,
-        "thal": tests.thal if tests else None
+        "dataset": "Cleveland", # Most common dataset from UCI
+        "cp": tests.cp if hasattr(tests, 'cp') else 0, # Pass actual chest pain type
+        "trestbps": measurements.trestbps if measurements else 120,
+        "chol": measurements.chol if measurements else 200,
+        "fbs": tests.fbs if tests else 0,
+        "restecg": tests.restecg if tests else 0,
+        "thalch": measurements.thalch if measurements else 150,
+        "exang": tests.exang if tests else 0,
+        "oldpeak": measurements.oldpeak if measurements else 0.0,
+        "slope": tests.slope if tests else 1,
+        "ca": measurements.ca if measurements else 0,
+        "thal": tests.thal if tests else 2
     }])
     
     # Generate probability
@@ -144,6 +208,31 @@ def predict_heart_disease(patient_id: int, background_tasks: BackgroundTasks, db
     background_tasks.add_task(create_audit_log, db, "PREDICTION_CREATED", "predictions", db_prediction.prediction_id)
     return db_prediction
 
+@app.get("/predictions")
+def get_prediction_history(db: Session = Depends(get_db)):
+    predictions = db.query(domain.Prediction).order_by(domain.Prediction.prediction_time.desc()).all()
+    results = []
+    for p in predictions:
+        patient = db.query(domain.Patient).filter(domain.Patient.patient_id == p.patient_id).first()
+        results.append({
+            "prediction_id": p.prediction_id,
+            "patient_id": p.patient_id,
+            "age": patient.age if patient else 'N/A',
+            "sex": patient.sex if patient else 'N/A',
+            "probability": p.probability,
+            "risk_level": p.risk_level,
+            "prediction_time": p.prediction_time
+        })
+    return results
+
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "model_loaded": final_pipeline is not None}
+
+@app.post("/login", response_model=api.DoctorResponse)
+def login_doctor(credentials: api.DoctorLogin, db: Session = Depends(get_db)):
+    doctor = db.query(domain.Doctor).filter(domain.Doctor.doctor_id == credentials.doctor_id).first()
+    if not doctor or doctor.password != credentials.password:
+        raise HTTPException(status_code=401, detail="Invalid Doctor ID or password")
+    
+    return {"doctor_id": doctor.doctor_id, "message": "Login successful"}

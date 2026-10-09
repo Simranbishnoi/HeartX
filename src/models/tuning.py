@@ -118,8 +118,8 @@ def main():
     study = optuna.create_study(direction="maximize")
     
     # Optimize using a lambda to pass X_train and y_train
-    # Running fewer trials to keep it fast for now
-    study.optimize(lambda trial: objective(trial, X_train, y_train), n_trials=10)
+    # Increased trials to find a more accurate model
+    study.optimize(lambda trial: objective(trial, X_train, y_train), n_trials=50)
     
     print("\nBest hyperparameters found:")
     best_params = study.best_params

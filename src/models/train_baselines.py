@@ -7,8 +7,11 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from xgboost import XGBClassifier
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 
 from src.evaluation.metrics import evaluate_model
@@ -28,7 +31,11 @@ def train_and_evaluate_baselines():
         "Random Forest": RandomForestClassifier(n_estimators=300, random_state=42, class_weight="balanced"),
         "XGBoost": XGBClassifier(n_estimators=300, max_depth=4, learning_rate=0.05, 
                                  subsample=0.8, colsample_bytree=0.8, random_state=42, 
-                                 eval_metric="logloss")
+                                 eval_metric="logloss"),
+        "Support Vector Machine": SVC(probability=True, random_state=42),
+        "Gradient Boosting": GradientBoostingClassifier(n_estimators=300, random_state=42),
+        "K-Nearest Neighbors": KNeighborsClassifier(n_neighbors=5),
+        "Neural Network": MLPClassifier(max_iter=1000, random_state=42)
     }
     
     results = []

@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+node_modules/
+.env
+.DS_Store
+heart_disease.db

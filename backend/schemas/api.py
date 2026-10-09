@@ -14,6 +14,7 @@ class PatientCreate(BaseModel):
     ca: Optional[float] = None
     
     # Clinical tests
+    cp: Optional[str] = None
     fbs: Optional[bool] = None
     restecg: Optional[str] = None
     exang: Optional[bool] = None
@@ -39,3 +40,11 @@ class PredictionResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+class DoctorLogin(BaseModel):
+    doctor_id: int
+    password: str
+
+class DoctorResponse(BaseModel):
+    doctor_id: int
+    message: str

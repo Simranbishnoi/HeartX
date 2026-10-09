@@ -5,8 +5,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Get the absolute path to the root of the project
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+db_path = os.path.join(BASE_DIR, "heart_disease.db")
+
 # Use DATABASE_URL from .env if available, otherwise fallback to local sqlite for testing
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./heart_disease.db")
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{db_path}")
 
 # SQLite needs connect_args={"check_same_thread": False}, Postgres doesn't
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
