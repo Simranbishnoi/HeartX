@@ -1,9 +1,10 @@
 import { Routes, Route, Link, useLocation, useNavigate, Navigate } from 'react-router-dom'
-import { Activity, LayoutDashboard, UserPlus, History, ShieldAlert } from 'lucide-react'
+import { Activity, LayoutDashboard, UserPlus, History, ShieldAlert, BarChart3 } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import PatientForm from './pages/PatientForm'
 import PredictionHistory from './pages/PredictionHistory'
 import HighRiskCases from './pages/HighRiskCases'
+import ModelBenchmark from './pages/ModelBenchmark'
 import Login from './pages/Login'
 
 function App() {
@@ -39,6 +40,11 @@ function App() {
               <ShieldAlert size={18} /> High Risk
             </span>
           </Link>
+          <Link to="/benchmark" className={`nav-link ${location.pathname === '/benchmark' ? 'active' : ''}`}>
+             <span style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
+              <BarChart3 size={18} /> Benchmark
+            </span>
+          </Link>
           <button 
             onClick={() => {
               localStorage.removeItem('doctor_id');
@@ -48,7 +54,7 @@ function App() {
             style={{background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger-color)', marginLeft: 'auto'}}
           >
              <span style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
-               Logout
+                Logout
             </span>
           </button>
         </div>
@@ -62,6 +68,7 @@ function App() {
           <Route path="/new-patient" element={localStorage.getItem('doctor_id') ? <PatientForm /> : <Navigate to="/login" />} />
           <Route path="/history" element={localStorage.getItem('doctor_id') ? <PredictionHistory /> : <Navigate to="/login" />} />
           <Route path="/high-risk" element={localStorage.getItem('doctor_id') ? <HighRiskCases /> : <Navigate to="/login" />} />
+          <Route path="/benchmark" element={localStorage.getItem('doctor_id') ? <ModelBenchmark /> : <Navigate to="/login" />} />
         </Routes>
       </main>
     </>
