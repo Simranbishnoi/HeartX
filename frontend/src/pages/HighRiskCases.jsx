@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { ShieldAlert, Search, X } from 'lucide-react'
+import { API_BASE_URL } from '../api'
 
 export default function HighRiskCases() {
   const [data, setData] = useState([]);
@@ -10,7 +11,7 @@ export default function HighRiskCases() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await fetch('http://localhost:8000/predictions');
+        const response = await fetch(`${API_BASE_URL}/predictions`);
         const json = await response.json();
         
         // Filter only High Risk cases

@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { Stethoscope } from 'lucide-react'
+import { API_BASE_URL } from '../api'
 
 export default function PatientForm() {
   const [formData, setFormData] = useState({
@@ -21,7 +22,7 @@ export default function PatientForm() {
     setLoading(true);
     try {
       // 1. Create or Update Patient
-      const url = formData.patient_id ? `http://localhost:8000/patients/${formData.patient_id}` : 'http://localhost:8000/patients';
+      const url = formData.patient_id ? `${API_BASE_URL}/patients/${formData.patient_id}` : `${API_BASE_URL}/patients`;
       const method = formData.patient_id ? 'PUT' : 'POST';
       
       const patientResponse = await fetch(url, {
@@ -51,7 +52,7 @@ export default function PatientForm() {
       const patientData = await patientResponse.json();
       
       // 2. Predict Risk
-      const predictResponse = await fetch(`http://localhost:8000/predict/${patientData.patient_id}`, {
+      const predictResponse = await fetch(`${API_BASE_URL}/predict/${patientData.patient_id}`, {
         method: 'POST'
       });
       

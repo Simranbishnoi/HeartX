@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Activity, HeartPulse, ShieldAlert, Users } from 'lucide-react'
+import { API_BASE_URL } from '../api'
 
 export default function Dashboard() {
   const [data, setData] = useState([]);
@@ -8,7 +9,7 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const response = await fetch('http://localhost:8000/predictions');
+        const response = await fetch(`${API_BASE_URL}/predictions`);
         const json = await response.json();
         setData(json);
       } catch (err) {

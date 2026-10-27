@@ -4,8 +4,10 @@ sqlalchemy
 psycopg2-binary
 pydantic
 pydantic-settings
+python-dotenv
 joblib
 pandas
 numpy
 scikit-learn
 xgboost
+shap

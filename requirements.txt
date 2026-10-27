@@ -10,4 +10,7 @@ python-dotenv
 joblib
 fastapi
 uvicorn
+pydantic
+pydantic-settings
+shap
 optuna

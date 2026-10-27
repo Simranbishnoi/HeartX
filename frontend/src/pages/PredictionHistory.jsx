@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { History, Search, Filter, X } from 'lucide-react'
+import { API_BASE_URL } from '../api'
 
 export default function PredictionHistory() {
   const [data, setData] = useState([]);
@@ -12,7 +13,7 @@ export default function PredictionHistory() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const response = await fetch('http://localhost:8000/predictions');
+        const response = await fetch(`${API_BASE_URL}/predictions`);
         const json = await response.json();
         
         const formatted = json.map(item => ({

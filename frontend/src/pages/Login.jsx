@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity } from 'lucide-react';
 import './Login.css';
-
-const API_BASE_URL = 'http://localhost:8000'; // Make sure this matches your backend
+import { API_BASE_URL } from '../api';
 
 export default function Login() {
   const [doctorId, setDoctorId] = useState('');
@@ -23,9 +22,9 @@ export default function Login() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          doctor_id: parseInt(doctorId, 10), 
-          password 
+        body: JSON.stringify({
+          doctor_id: parseInt(doctorId, 10),
+          password
         }),
       });
 
@@ -37,10 +36,10 @@ export default function Login() {
 
       // Store doctor_id in localStorage
       localStorage.setItem('doctor_id', data.doctor_id);
-      
+
       // Redirect to dashboard
       navigate('/');
-      
+
     } catch (err) {
       setError(err.message);
     } finally {
@@ -56,9 +55,9 @@ export default function Login() {
           <h2>Heart<span>X</span></h2>
           <p>Doctor Portal Login</p>
         </div>
-        
+
         {error && <div className="login-error">{error}</div>}
-        
+
         <form onSubmit={handleLogin} className="login-form">
           <div className="form-group">
             <label htmlFor="doctorId">Doctor ID</label>
@@ -71,7 +70,7 @@ export default function Login() {
               required
             />
           </div>
-          
+
           <div className="form-group">
             <label htmlFor="password">Password</label>
             <input
@@ -83,7 +82,7 @@ export default function Login() {
               required
             />
           </div>
-          
+
           <button type="submit" className="login-button" disabled={isLoading}>
             {isLoading ? 'Logging in...' : 'Login'}
           </button>
