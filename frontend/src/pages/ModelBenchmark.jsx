@@ -7,11 +7,15 @@ import {
   Layers, 
   FileText, 
   Activity, 
-  Filter, 
   Columns3, 
   BarChart2, 
   SlidersHorizontal,
-  Info
+  Info,
+  Download,
+  Code2,
+  Copy,
+  Check,
+  Sparkles
 } from 'lucide-react';
 
 const benchmarkData = [
@@ -205,10 +209,20 @@ const benchmarkData = [
 ];
 
 export default function ModelBenchmark() {
-  const [chartMode, setChartMode] = useState('grouped'); // 'grouped' | 'single' | 'table'
+  const [chartMode, setChartMode] = useState('matplotlib'); // 'matplotlib' | 'grouped' | 'single' | 'table'
   const [selectedMetric, setSelectedMetric] = useState('recall');
   const [yScale, setYScale] = useState('focused'); // 'focused' (70-100%) | 'zero' (0-100%)
   const [hoveredBar, setHoveredBar] = useState(null);
+
+  // Matplotlib-style reference chart controls
+  const [mplDataset, setMplDataset] = useState('top6'); // 'top6' | 'all11' | 'heartx_profile'
+  const [mplTheme, setMplTheme] = useState('white'); // 'white' (Paper Fig) | 'dark'
+  const [mplColorMode, setMplColorMode] = useState('classic'); // 'classic' (#1f77b4) | 'highlight_ours'
+  const [mplYScale, setMplYScale] = useState('zero'); // 'zero' (0-100%) | 'focused' (70-100%)
+  const [mplShowValues, setMplShowValues] = useState(true);
+  const [mplShowCode, setMplShowCode] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [hoveredMplBar, setHoveredMplBar] = useState(null);
 
   const metricsConfig = {
     recall: {
@@ -270,6 +284,112 @@ export default function ModelBenchmark() {
     return ((clamped - yMin) / (yMax - yMin)) * 100;
   };
 
+  // Prepare items for Matplotlib plot (Top 6 matches the 6 bars in reference image)
+  const top6List = [
+    benchmarkData.find(d => d.id === 'our-model'),
+    benchmarkData.find(d => d.id === 'mohan-2019'),
+    benchmarkData.find(d => d.id === 'gokulnath-2019'),
+    benchmarkData.find(d => d.id === 'kavitha-2021'),
+    benchmarkData.find(d => d.id === 'rahman-2021'),
+    benchmarkData.find(d => d.id === 'sharma-2022')
+  ].filter(Boolean);
+
+  let mplItems = [];
+  if (mplDataset === 'heartx_profile') {
+    const our = benchmarkData.find(d => d.isOurs);
+    mplItems = [
+      { id: 'acc', label: 'Accuracy', value: our.accuracy, isOurs: true, subtitle: 'Overall Diagnostic Accuracy', model: our.model },
+      { id: 'prec', label: 'Precision', value: our.precision, isOurs: true, subtitle: 'Positive Predictive Value', model: our.model },
+      { id: 'rec', label: 'Recall', value: our.recall, isOurs: true, subtitle: 'Clinical Sensitivity (Top Rank)', model: our.model },
+      { id: 'f1', label: 'F1-Score', value: our.f1, isOurs: true, subtitle: 'Harmonic Mean Metric', model: our.model },
+      { id: 'roc', label: 'ROC-AUC', value: our.roc_auc, isOurs: true, subtitle: 'Threshold Invariant Area', model: our.model }
+    ];
+  } else if (mplDataset === 'top6') {
+    mplItems = top6List.map(item => ({
+      id: item.id,
+      label: item.shortName,
+      value: item[selectedMetric] || 0,
+      isOurs: item.isOurs,
+      model: item.model,
+      paper: item.paper,
+      year: item.year,
+      venue: item.venue,
+      subtitle: `${item.model} (${item.year})`
+    }));
+  } else {
+    // all 11 sorted by selected metric
+    mplItems = sortedByMetric.map(item => ({
+      id: item.id,
+      label: item.shortName,
+      value: item[selectedMetric] || 0,
+      isOurs: item.isOurs,
+      model: item.model,
+      paper: item.paper,
+      year: item.year,
+      venue: item.venue,
+      subtitle: `${item.model} (${item.year})`
+    }));
+  }
+
+  // Matplotlib Y-Axis
+  const mplYMin = mplYScale === 'focused' ? 70 : 0;
+  const mplYMax = 100;
+  const mplYTicks = mplYScale === 'focused'
+    ? [70, 75, 80, 85, 90, 95, 100]
+    : [0, 20, 40, 60, 80, 100];
+
+  const handleDownloadSvg = () => {
+    const svgEl = document.getElementById('matplotlib-figure-svg');
+    if (!svgEl) return;
+    const svgData = new XMLSerializer().serializeToString(svgEl);
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `heartx_matplotlib_benchmark_${mplDataset}_${selectedMetric}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const generatePythonSnippet = () => {
+    const cats = mplItems.map(d => `'${d.label.replace("'", "\\'")}'`).join(', ');
+    const vals = mplItems.map(d => (d.value || 0).toFixed(2)).join(', ');
+    const metricName = mplDataset === 'heartx_profile' ? 'Metric' : metricsConfig[selectedMetric].short;
+    return `import matplotlib.pyplot as plt
+
+# HeartX Benchmark Data (UCI Heart Disease)
+categories = [${cats}]
+scores = [${vals}]
+
+# Figure setup matching scientific publication format
+fig, ax = plt.subplots(figsize=(8, 5), dpi=300)
+
+# Plot vertical bar chart in classic Matplotlib tab:blue (#1f77b4)
+bars = ax.bar(categories, scores, color='#1f77b4', width=0.68)
+
+# Matplotlib formatting
+ax.set_ylabel('${metricName} (%)', fontsize=12)
+ax.set_ylim(${mplYMin}, ${mplYMax})
+ax.set_title('UCI Heart Disease Benchmark (${metricName})', fontsize=13, pad=12)
+
+# Value annotations on bars
+for bar in bars:
+    yval = bar.get_height()
+    ax.text(bar.get_x() + bar.get_width()/2.0, yval + 1.0, f"{yval:.1f}%", ha='center', va='bottom', fontsize=10)
+
+plt.tight_layout()
+plt.savefig('heartx_benchmark_figure.png', dpi=300)
+plt.show()`;
+  };
+
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(generatePythonSnippet());
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       
@@ -298,6 +418,18 @@ export default function ModelBenchmark() {
             flexWrap: 'wrap'
           }}>
             <button 
+              onClick={() => setChartMode('matplotlib')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '9px 16px', borderRadius: '8px', border: 'none',
+                background: chartMode === 'matplotlib' ? 'var(--accent-color)' : 'transparent',
+                color: chartMode === 'matplotlib' ? '#fff' : 'var(--text-secondary)', 
+                cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', transition: 'all 0.2s'
+              }}
+            >
+              <BarChart3 size={16} /> Matplotlib Scientific Bar Plot
+            </button>
+            <button 
               onClick={() => setChartMode('grouped')}
               style={{
                 display: 'flex', alignItems: 'center', gap: '8px',
@@ -307,7 +439,7 @@ export default function ModelBenchmark() {
                 cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', transition: 'all 0.2s'
               }}
             >
-              <Columns3 size={16} /> Grouped Multi-Metric Bar Chart
+              <Columns3 size={16} /> Grouped Multi-Metric Chart
             </button>
             <button 
               onClick={() => setChartMode('single')}
@@ -319,7 +451,7 @@ export default function ModelBenchmark() {
                 cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', transition: 'all 0.2s'
               }}
             >
-              <BarChart2 size={16} /> Single Metric Vertical Bars
+              <BarChart2 size={16} /> Single Metric Ranked Bars
             </button>
             <button 
               onClick={() => setChartMode('table')}
@@ -385,6 +517,499 @@ export default function ModelBenchmark() {
           </p>
         </div>
       </div>
+
+      {/* VIEW 0: MATPLOTLIB / SCIENTIFIC PUBLICATION BAR CHART (Exact layout matching user's reference) */}
+      {chartMode === 'matplotlib' && (
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          
+          {/* Header & Description */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', fontSize: '0.85rem', fontWeight: 600 }}>
+                <Sparkles size={18} /> MATPLOTLIB SCIENTIFIC PUBLICATION BAR CHART
+              </div>
+              <h2 style={{ fontSize: '1.4rem', margin: '4px 0 0 0' }}>
+                {mplDataset === 'heartx_profile' 
+                  ? 'HeartX Diagnostic Metric Profile' 
+                  : `${metricsConfig[selectedMetric].name} Comparison`}
+              </h2>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>
+                Rendered with authentic <strong>Matplotlib figure aesthetics</strong>: solid rectangular vertical bars (<code>#1f77b4</code>), black bounding box frame, outward tick marks, and bottom category labels.
+              </p>
+            </div>
+
+            {/* Quick Actions (Download SVG & View Code) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                onClick={handleDownloadSvg}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid var(--panel-border)',
+                  color: '#fff',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <Download size={14} /> Export SVG Figure
+              </button>
+              <button
+                onClick={() => setMplShowCode(!mplShowCode)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  background: mplShowCode ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.08)',
+                  border: mplShowCode ? '1px solid #6366f1' : '1px solid var(--panel-border)',
+                  color: mplShowCode ? '#818cf8' : '#fff',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <Code2 size={14} /> {mplShowCode ? 'Hide Python Code' : 'View Python Matplotlib Code'}
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Controls Bar */}
+          <div style={{
+            background: 'rgba(0, 0, 0, 0.25)',
+            border: '1px solid var(--panel-border)',
+            borderRadius: '12px',
+            padding: '12px 16px',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
+          }}>
+            {/* Top row: Dataset Selection & Metric Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+              {/* Dataset Scope Tabs */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  Layout Scope:
+                </span>
+                <button
+                  onClick={() => setMplDataset('top6')}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    border: mplDataset === 'top6' ? '1px solid #38bdf8' : '1px solid var(--panel-border)',
+                    background: mplDataset === 'top6' ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+                    color: mplDataset === 'top6' ? '#fff' : 'var(--text-secondary)'
+                  }}
+                >
+                  ★ Top 6 Baselines (Matches Reference Figure)
+                </button>
+                <button
+                  onClick={() => setMplDataset('heartx_profile')}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    border: mplDataset === 'heartx_profile' ? '1px solid #10b981' : '1px solid var(--panel-border)',
+                    background: mplDataset === 'heartx_profile' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                    color: mplDataset === 'heartx_profile' ? '#fff' : 'var(--text-secondary)'
+                  }}
+                >
+                  HeartX 5-Metric Profile (5 Bars)
+                </button>
+                <button
+                  onClick={() => setMplDataset('all11')}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    border: mplDataset === 'all11' ? '1px solid #a855f7' : '1px solid var(--panel-border)',
+                    background: mplDataset === 'all11' ? 'rgba(168, 85, 247, 0.2)' : 'transparent',
+                    color: mplDataset === 'all11' ? '#fff' : 'var(--text-secondary)'
+                  }}
+                >
+                  All 11 Published Works
+                </button>
+              </div>
+
+              {/* Style & Scale Options */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                {/* Theme Toggle (Paper White vs Dark) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Canvas:</span>
+                  <button
+                    onClick={() => setMplTheme(mplTheme === 'white' ? 'dark' : 'white')}
+                    style={{
+                      background: mplTheme === 'white' ? '#ffffff' : '#1e293b',
+                      color: mplTheme === 'white' ? '#000000' : '#ffffff',
+                      border: '1px solid #94a3b8',
+                      padding: '3px 10px',
+                      borderRadius: '5px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {mplTheme === 'white' ? 'Paper White (Original)' : 'Dark Canvas'}
+                  </button>
+                </div>
+
+                {/* HeartX Highlight Toggle */}
+                {mplDataset !== 'heartx_profile' && (
+                  <button
+                    onClick={() => setMplColorMode(mplColorMode === 'classic' ? 'highlight_ours' : 'classic')}
+                    style={{
+                      background: mplColorMode === 'highlight_ours' ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                      border: mplColorMode === 'highlight_ours' ? '1px solid #10b981' : '1px solid var(--panel-border)',
+                      color: mplColorMode === 'highlight_ours' ? '#10b981' : 'var(--text-secondary)',
+                      padding: '3px 10px',
+                      borderRadius: '5px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {mplColorMode === 'highlight_ours' ? '✓ Highlight HeartX' : 'Uniform Classic Blue'}
+                  </button>
+                )}
+
+                {/* Y-Scale */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <SlidersHorizontal size={14} color="var(--text-secondary)" />
+                  <button
+                    onClick={() => setMplYScale(mplYScale === 'zero' ? 'focused' : 'zero')}
+                    style={{
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid var(--panel-border)',
+                      color: '#fff',
+                      padding: '3px 10px',
+                      borderRadius: '5px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {mplYScale === 'zero' ? 'Origin Y=0% (Standard)' : 'Zoomed (70% - 100%)'}
+                  </button>
+                </div>
+
+                {/* Values on Bars */}
+                <button
+                  onClick={() => setMplShowValues(!mplShowValues)}
+                  style={{
+                    background: mplShowValues ? 'rgba(255,255,255,0.1)' : 'transparent',
+                    border: '1px solid var(--panel-border)',
+                    color: mplShowValues ? '#fff' : 'var(--text-secondary)',
+                    padding: '3px 10px',
+                    borderRadius: '5px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {mplShowValues ? 'Hide Values' : 'Show Values'}
+                </button>
+              </div>
+            </div>
+
+            {/* Metric Selector Buttons (Visible when showing model benchmarks) */}
+            {mplDataset !== 'heartx_profile' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  Metric:
+                </span>
+                {Object.entries(metricsConfig).map(([key, config]) => (
+                  <button
+                    key={key}
+                    onClick={() => setSelectedMetric(key)}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      border: selectedMetric === key ? `1px solid ${config.color}` : '1px solid var(--panel-border)',
+                      background: selectedMetric === key ? `${config.color}22` : 'transparent',
+                      color: selectedMetric === key ? '#ffffff' : 'var(--text-secondary)',
+                      transition: 'all 0.15s',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: config.color }}></span>
+                    {config.short}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* PYTHON MATPLOTLIB CODE DRAWER (If toggled) */}
+          {mplShowCode && (
+            <div style={{
+              background: '#0d1117',
+              border: '1px solid #30363d',
+              borderRadius: '10px',
+              padding: '16px',
+              marginBottom: '1.5rem',
+              position: 'relative'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.8rem', color: '#58a6ff', fontWeight: 600, fontFamily: 'monospace' }}>
+                  Python Matplotlib Code (plt.bar)
+                </span>
+                <button
+                  onClick={handleCopyCode}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px',
+                    background: copiedCode ? '#238636' : 'rgba(255,255,255,0.1)',
+                    border: 'none',
+                    color: '#fff',
+                    padding: '4px 10px',
+                    borderRadius: '5px',
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  {copiedCode ? <Check size={13} /> : <Copy size={13} />}
+                  {copiedCode ? 'Copied!' : 'Copy Code'}
+                </button>
+              </div>
+              <pre style={{
+                margin: 0,
+                fontSize: '0.8rem',
+                color: '#e6edf3',
+                fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+                overflowX: 'auto',
+                lineHeight: 1.5
+              }}>
+                {generatePythonSnippet()}
+              </pre>
+            </div>
+          )}
+
+          {/* THE MATPLOTLIB FIGURE CANVAS (Exact layout from user's image) */}
+          <div style={{
+            background: mplTheme === 'white' ? '#ffffff' : '#0f172a',
+            borderRadius: '8px',
+            padding: '24px 20px 20px 20px',
+            border: mplTheme === 'white' ? '1px solid #cbd5e1' : '1px solid #334155',
+            boxShadow: mplTheme === 'white' ? '0 4px 20px rgba(0,0,0,0.12)' : '0 8px 30px rgba(0,0,0,0.5)',
+            position: 'relative',
+            overflowX: 'auto'
+          }}>
+            {/* SVG Figure Plot */}
+            {(() => {
+              const svgW = 840;
+              const svgH = 460;
+              const mL = 65;
+              const mR = 30;
+              const mT = 35;
+              const mB = 65;
+              const pW = svgW - mL - mR; // 745
+              const pH = svgH - mT - mB; // 360
+
+              const nBars = mplItems.length;
+              const slotW = pW / nBars;
+              const bWidth = slotW * (nBars <= 6 ? 0.72 : 0.76);
+
+              const axisStroke = mplTheme === 'white' ? '#000000' : '#94a3b8';
+              const textFill = mplTheme === 'white' ? '#000000' : '#f8fafc';
+              const boxFill = mplTheme === 'white' ? '#ffffff' : '#1e293b';
+
+              return (
+                <svg
+                  id="matplotlib-figure-svg"
+                  viewBox={`0 0 ${svgW} ${svgH}`}
+                  style={{
+                    width: '100%',
+                    height: 'auto',
+                    minWidth: nBars > 7 ? '820px' : '650px',
+                    display: 'block',
+                    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif'
+                  }}
+                >
+                  {/* Outer Background of the whole figure box */}
+                  <rect x="0" y="0" width={svgW} height={svgH} fill={boxFill} />
+
+                  {/* Bounding Box Frame (Thin black rectangle around all 4 sides, exactly matching Matplotlib) */}
+                  <rect
+                    x={mL}
+                    y={mT}
+                    width={pW}
+                    height={pH}
+                    fill="none"
+                    stroke={axisStroke}
+                    strokeWidth="1.2"
+                  />
+
+                  {/* Y-Axis Ticks & Numerical Labels */}
+                  {mplYTicks.map((tick) => {
+                    const y = mT + pH - ((tick - mplYMin) / (mplYMax - mplYMin)) * pH;
+                    return (
+                      <g key={tick}>
+                        {/* Outward Tick Line on the Left Axis */}
+                        <line
+                          x1={mL - 6}
+                          y1={y}
+                          x2={mL}
+                          y2={y}
+                          stroke={axisStroke}
+                          strokeWidth="1.2"
+                        />
+                        {/* Numerical Tick Label */}
+                        <text
+                          x={mL - 10}
+                          y={y + 4}
+                          textAnchor="end"
+                          fontSize="13"
+                          fill={textFill}
+                        >
+                          {tick}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Vertical Bars and Bottom X-Axis Ticks & Labels */}
+                  {mplItems.map((item, i) => {
+                    const barX = mL + i * slotW + (slotW - bWidth) / 2;
+                    const barCenterX = barX + bWidth / 2;
+                    const clamped = Math.max(mplYMin, Math.min(mplYMax, item.value || 0));
+                    const bHeight = ((clamped - mplYMin) / (mplYMax - mplYMin)) * pH;
+                    const barY = mT + pH - bHeight;
+
+                    // Bar color
+                    let fill = '#1f77b4'; // Matplotlib default tab:blue
+                    if (mplColorMode === 'highlight_ours' && item.isOurs) {
+                      fill = '#2ca02c'; // Matplotlib green
+                    }
+
+                    const isHovered = hoveredMplBar && hoveredMplBar.id === item.id;
+
+                    return (
+                      <g 
+                        key={item.id}
+                        onMouseEnter={() => setHoveredMplBar(item)}
+                        onMouseLeave={() => setHoveredMplBar(null)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        {/* The Solid Rectangular Bar (Flat top, 0 border radius, sitting squarely on bottom axis) */}
+                        <rect
+                          x={barX}
+                          y={barY}
+                          width={bWidth}
+                          height={bHeight}
+                          fill={fill}
+                          stroke={axisStroke}
+                          strokeWidth={isHovered ? "1.5" : "0.5"}
+                          opacity={isHovered ? 0.9 : 1}
+                        />
+
+                        {/* Optional Numeric Value on Top of Bar */}
+                        {mplShowValues && (
+                          <text
+                            x={barCenterX}
+                            y={barY - 6}
+                            textAnchor="middle"
+                            fontSize={nBars > 8 ? "10" : "12"}
+                            fontWeight="600"
+                            fill={mplTheme === 'white' ? (item.isOurs ? '#047857' : '#1e3a8a') : (item.isOurs ? '#34d399' : '#93c5fd')}
+                          >
+                            {item.value ? `${item.value.toFixed(1)}%` : 'N/R'}
+                          </text>
+                        )}
+
+                        {/* Bottom X-Axis Tick Line pointing downwards */}
+                        <line
+                          x1={barCenterX}
+                          y1={mT + pH}
+                          x2={barCenterX}
+                          y2={mT + pH + 6}
+                          stroke={axisStroke}
+                          strokeWidth="1.2"
+                        />
+
+                        {/* Category Label directly under the tick mark */}
+                        <text
+                          x={barCenterX}
+                          y={mT + pH + (nBars > 7 ? 22 : 24)}
+                          textAnchor={nBars > 7 ? "end" : "middle"}
+                          fontSize={nBars > 7 ? "11" : "13"}
+                          fontWeight={item.isOurs ? "700" : "400"}
+                          fill={textFill}
+                          transform={nBars > 7 ? `rotate(-25, ${barCenterX}, ${mT + pH + 22})` : undefined}
+                        >
+                          {item.label}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              );
+            })()}
+
+            {/* Hover Tooltip Box */}
+            {hoveredMplBar && (
+              <div style={{
+                marginTop: '12px',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                background: mplTheme === 'white' ? '#f8fafc' : '#1e293b',
+                border: mplTheme === 'white' ? '1px solid #cbd5e1' : '1px solid #475569',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '8px',
+                fontSize: '0.85rem',
+                color: mplTheme === 'white' ? '#0f172a' : '#f8fafc'
+              }}>
+                <div>
+                  <strong style={{ color: hoveredMplBar.isOurs ? '#10b981' : '#1f77b4', fontSize: '0.95rem' }}>
+                    {hoveredMplBar.label} {hoveredMplBar.isOurs ? '(Our Proposed Work)' : ''}
+                  </strong>
+                  <span style={{ marginLeft: '8px', color: mplTheme === 'white' ? '#64748b' : '#94a3b8' }}>
+                    {hoveredMplBar.subtitle || hoveredMplBar.model}
+                  </span>
+                </div>
+                <div style={{ fontWeight: 700, fontSize: '1rem', color: hoveredMplBar.isOurs ? '#10b981' : '#1f77b4' }}>
+                  {hoveredMplBar.value ? `${hoveredMplBar.value.toFixed(2)}%` : 'Not Reported'}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Academic Paper Figure Caption */}
+          <div style={{ 
+            marginTop: '1.25rem', 
+            paddingTop: '0.75rem', 
+            borderTop: '1px solid var(--panel-border)', 
+            fontSize: '0.85rem', 
+            color: 'var(--text-secondary)',
+            fontStyle: 'italic',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <Info size={16} color="#38bdf8" />
+            <span>
+              <strong>Figure 1:</strong> Comparative evaluation on the UCI Heart Disease dataset rendered in standard 2D Matplotlib scientific publication format (<code>#1f77b4</code> solid vertical bars). Demonstrates diagnostic sensitivity leadership and baseline model rankings.
+            </span>
+          </div>
+
+        </div>
+      )}
 
       {/* VIEW 1: GROUPED MULTI-METRIC BAR CHART (Original Research Paper Standard Figure) */}
       {chartMode === 'grouped' && (
